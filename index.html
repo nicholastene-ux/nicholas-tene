@@ -539,7 +539,8 @@ header{z-index:20;gap:16px}
 </div>
 <div class="hero-art swan-art" aria-hidden="false">
 <a class="runway-reel" id="runway-reel" href="#reel"><span aria-hidden="true">▶</span>Watch reel · 2:47</a>
-<button class="runway-pulse" id="runway-pulse" type="button">Play runway pulse</button>
+<button class="runway-pulse" id="runway-pulse" type="button" title="Closer In The Dark">Play music</button>
+<audio id="site-score" src="media/closer-in-the-dark-site.mp3" loop preload="none" aria-label="Closer In The Dark"></audio>
 <video autoplay muted loop playsinline preload="metadata" poster="media/open_runway_poster.jpg" aria-label="Models in sheer white gowns walk a hazy runway as the lighting shifts to moody red and a cool-blue spotlight"><source src="media/open_runway.mp4" type="video/mp4"></video>
 </div>
 </section>
@@ -1182,81 +1183,29 @@ header{z-index:20;gap:16px}
     var p=pv.play(); if(p&&p.catch)p.catch(function(){});
   });
 
-  /* Runway score: an original four-bar, 96 BPM instrumental. */
+  /* The original site score is attenuated in the file for consistent mobile levels. */
   var sndBtn=document.getElementById('snd');
   var pulseBtn=document.getElementById('runway-pulse');
-  var bed={ctx:null, master:null, on:false, paused:false, ducking:false, inHero:true, timer:0};
-  function ensureBed(){
-    if(bed.ctx) return bed;
-    var AC=window.AudioContext||window.webkitAudioContext;
-    if(!AC) return null;
-    var ctx=new AC();
-    var master=ctx.createGain();
-    master.gain.value=0.0001;
-    master.connect(ctx.destination);
-    function note(t,hz,type,level,length,slide){
-      var osc=ctx.createOscillator(), amp=ctx.createGain();
-      osc.type=type; osc.frequency.setValueAtTime(hz,t);
-      if(slide) osc.frequency.exponentialRampToValueAtTime(slide,t+length*.65);
-      amp.gain.setValueAtTime(0,t);
-      amp.gain.linearRampToValueAtTime(level,t+.009);
-      amp.gain.exponentialRampToValueAtTime(.0001,t+length);
-      osc.connect(amp); amp.connect(master); osc.start(t); osc.stop(t+length+.01);
-      osc.onended=function(){osc.disconnect();amp.disconnect()};
-    }
-    var step=0,next=0,eighth=60/96/2,roots=[55,55,65.406,49];
-    bed.start=function(){
-      next=ctx.currentTime+.025;
-      function tick(){
-        if(next<ctx.currentTime) next=ctx.currentTime+.015;
-        while(next<ctx.currentTime+.14){
-          var i=step%8,root=roots[Math.floor(step/8)%4];
-          if(i%2===0) note(next,104,'sine',.26,.14,47);
-          if(i===0||i===3||i===6) note(next,root*(i===6?1.5:1),'triangle',.24,i===0?.52:.27);
-          if(i===1||i===5) note(next,root*8,'sine',.055,.085);
-          next+=eighth; step=(step+1)%32;
-        }
-      }
-      tick(); bed.timer=setInterval(tick,50);
-    };
-    bed.ctx=ctx; bed.master=master;
-    return bed;
-  }
+  var score=document.getElementById('site-score'),bed={on:false}, requestId=0;
   function syncBed(){
-    pulseBtn.textContent=!bed.on?'Play runway pulse':bed.paused?'Resume pulse':'Pause pulse';
-    if(!bed.ctx) return;
-    var audible=bed.on&&!bed.paused&&bed.inHero&&!bed.ducking&&!document.hidden;
-    bed.master.gain.setTargetAtTime(audible?.70:0,bed.ctx.currentTime,.035);
-    if(audible&&!bed.timer) bed.start();
-    if(!audible&&bed.timer){ clearInterval(bed.timer); bed.timer=0; }
+    var blocked=document.hidden||d.open||Array.from(document.querySelectorAll('video')).some(v=>!v.muted&&!v.paused&&!v.ended);
+    pulseBtn.textContent=bed.on?'Pause music':'Play music';
+    sndBtn.textContent=bed.on?'Sound on':'Sound off';
+    sndBtn.setAttribute('aria-pressed',String(bed.on));
+    pulseBtn.setAttribute('aria-pressed',String(bed.on));
+    if(!bed.on||blocked){++requestId;score.pause();return}
+    if(score.paused){var id=++requestId;score.play().catch(function(){if(id===requestId){bed.on=false;syncBed()}})}
   }
-  if('IntersectionObserver' in window){
-    new IntersectionObserver(function(entries){bed.inHero=entries[0].isIntersecting;syncBed()})
-      .observe(document.querySelector('.hero.swan'));
-  }
+  function setSound(on){bed.on=on;syncBed()}
+  function duck(active){if(active){++requestId;score.pause()}else{syncBed()}}
   document.addEventListener('visibilitychange',syncBed);
-  function setSound(on){
-    var b=ensureBed();
-    if(!b) return;
-    if(b.ctx.state==='suspended') b.ctx.resume();
-    b.on=on;
-    b.paused=false;
-    if(sndBtn){
-      sndBtn.setAttribute('aria-pressed', on?'true':'false');
-      sndBtn.textContent=on?'Sound on':'Sound off';
-    }
-    syncBed();
-  }
-  function duck(dck){
-    bed.ducking=!!dck;
-    syncBed();
-  }
+  ['play','pause','ended','volumechange'].forEach(function(evt){
+    document.addEventListener(evt,function(e){if(e.target.tagName==='VIDEO')syncBed()},true)
+  });
   window.__ntDuck=duck;
   if(sndBtn) sndBtn.addEventListener('click',function(){setSound(!bed.on)});
   pulseBtn.addEventListener('click',function(){
-    if(!bed.on){setSound(true);return}
-    bed.paused=!bed.paused;
-    syncBed();
+    setSound(!bed.on);
   });
 
   /* When sound is on, hovering a card with data-snd unmutes that preview (if it has audio). */
